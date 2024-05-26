@@ -5,7 +5,51 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
+#include <iomanip>
+
+std::string calculateSHA256(const std::string& fileName) {
+    std::ifstream file(fileName, std::ios::binary);
+    if (!file) {
+        return "";
+    }
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) {
+        return "";
+    }
+
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return "";
+    }
+
+    const int bufferSize = 4096;
+    char buffer[bufferSize];
+    while (file.good()) {
+        file.read(buffer, bufferSize);
+        if (EVP_DigestUpdate(ctx, buffer, file.gcount()) != 1) {
+            EVP_MD_CTX_free(ctx);
+            return "";
+        }
+    }
+
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    unsigned int hashLength = 0;
+    if (EVP_DigestFinal_ex(ctx, hash, &hashLength) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return "";
+    }
+
+    EVP_MD_CTX_free(ctx);
+
+    std::stringstream ss;
+    for (unsigned int i = 0; i < hashLength; i++) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+    }
+
+    return ss.str();
+}
 
 // Function to convert byte array to hexadecimal string
 std::string bytesToHex(const BYTE* bytes, size_t length) {
@@ -49,7 +93,7 @@ size_t returnOffsetSizePosition(std::string fileType) {
     std::transform(fileType.begin(), fileType.end(), fileType.begin(),
         [](unsigned char c) { return std::tolower(c); });
     if (fileType == "mp5") {
-        return 36; //this returns where space is located
+        return 36; // This returns where space is located
     }
     return 0;
 }
@@ -57,12 +101,17 @@ unsigned int returnLengthOfSize(std::string fileType) {
     std::transform(fileType.begin(), fileType.end(), fileType.begin(),
         [](unsigned char c) { return std::tolower(c); });
     if (fileType == "mp5") {
-        return 4; //this returns how many bytes tells the space
+        return 4; // This returns how many bytes are used for the space
     }
     return 0;
 }
 
 int main() {
+
+    std::string restoreFolder;
+    std::cout << "Path where restore files will be stored:" << std::endl;
+    std::cin >> restoreFolder;
+
 
     HANDLE hDrive = CreateFile(
         L"\\\\.\\G:",
@@ -83,7 +132,7 @@ int main() {
     BYTE buffer[bufferSize];
     DWORD bytesRead;
 
-    // Map of file types and their corresponding signatures
+    // Map of file types and their corresponding multiple signatures
     std::map<std::string, std::vector<std::string>> fileSignatures = {
         {"jpeg", {"FFD8FFE000104A4649460001", "FFD8FFDB", "FFD8FFEE", "FFD8FFE0"}},
         {"png", {"89504E470D0A1A0A"}},
@@ -91,10 +140,8 @@ int main() {
         {"pdf", {"255044462D"}},
         {"zip", {"504B0304", "504B0506", "504B0708"}},
         {"txt", {"EFBBBF"}},
-        {"docx", {"504B030414000600"}},
+        //{"docx", {"504B030414000600"}}, Current implementation doesn't support office files
         {"mp4", {"667479704D534E56", "6674797069736F6D"}}
-        
-        // Add more file types and their signatures as needed
     };
 
     std::map<size_t, std::string> foundFiles;
@@ -105,7 +152,6 @@ int main() {
     while (ReadFile(hDrive, buffer, bufferSize, &bytesRead, NULL) && bytesRead > 0) {
         // Convert the buffer to hexadecimal string
         std::string hexData = bytesToHex(buffer, bytesRead);
-        //std::cout << hexData << std::endl;
         // Check for file signatures in the hexadecimal data
         for (const auto& filePair : fileSignatures) {
             const std::string& fileType = filePair.first;
@@ -121,14 +167,12 @@ int main() {
                     break;  // Move to the next file type
                 }
             }
-
-            // write recovery code 
         }
         currentOffset += bytesRead;
     }
-
-    std::string restoreFolder = "C:\\Users\\claud\\Documents\\Sexto_semestre\\proyecto_integracion_tecnologica\\ezRecovery\\test\\recovered";
-
+    std::ofstream hashFile(restoreFolder + "\\hashes.txt", std::ios::app);
+    
+    
     // Restore the found files
     for (std::map<size_t, std::string>::iterator filePairIt = foundFiles.begin(); filePairIt != foundFiles.end(); ++filePairIt) {
         size_t startOffset = filePairIt->first;
@@ -150,7 +194,7 @@ int main() {
         bool endOfFileFound = false;
         while (ReadFile(hDrive, buffer, static_cast<DWORD>(bytesToRead), &bytesRead, NULL) && bytesRead > 0) {
             outputFile.write(reinterpret_cast<const char*>(buffer), bytesRead);
-            if (std::next(filePairIt) != foundFiles.end())
+            if (std::next(filePairIt) != foundFiles.end()) //if there is another file, the file ends before that file
                 endOffset = std::next(filePairIt)->first - bufferSize; // it's necessary to substract buffersize, or it will consume bytes from the other file
             // Check if it is a mp4 file so it can search for the mdat chunk
             else if (fileType == "mp4" && !endOfFileFound)
@@ -167,6 +211,7 @@ int main() {
                     endOfFileFound = true;
                 }
             }
+            // File formats that have specific location of their size
             else if (positionOfSize && !endOfFileFound) {
                 unsigned int lengthOfSize = returnLengthOfSize(fileType);
                 BYTE bufferOfSize[bufferSize];
@@ -178,6 +223,7 @@ int main() {
                 endOfFileFound = true;
             }
             bytesToRead = endOffset - (startOffset + currentBytesRead);
+            // Until the bytes to read are less than 1024 it should read 1024
             if (bytesToRead > 1024)
                 bytesToRead = 1024;
             currentBytesRead += bytesRead;
@@ -185,7 +231,14 @@ int main() {
 
         outputFile.close();
         std::cout << "Restored file: " << fileName << std::endl;
+
+        // Calculate and store the hash of the restored file
+        std::string hash = calculateSHA256(fileName);
+        hashFile << fileName << ": " << hash << std::endl;
+        
     }
+    if(hashFile.is_open())
+        hashFile.close();
 
     
     return 0;
