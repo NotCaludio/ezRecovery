@@ -11,9 +11,12 @@ private:
 	void OnSliderChanged(wxCommandEvent& evt);
 	void OnTextChanged(wxCommandEvent& evt);
 	void OnChoiceChanged(wxCommandEvent& evt);
+	wxGauge* gauge;
+	int errorCode;
 	wxString path;
 	wxString drive;
 	wxStaticText* selectedPath;
+	wxStaticText* statusMessage;
 	wxButton* recover;
 	wxButton* pathToRecover;
 	wxPanel* panel;

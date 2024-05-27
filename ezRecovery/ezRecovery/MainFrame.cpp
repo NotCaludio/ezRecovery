@@ -17,9 +17,9 @@ MainFrame::MainFrame(const wxString& title) : wxFrame(nullptr, wxID_ANY, title) 
 	choices.Add("Q:"); choices.Add("R:"); choices.Add("S:"); choices.Add("T:"); choices.Add("U:"); choices.Add("V:"); choices.Add("W:"); choices.Add("X:");
 	choices.Add("Y:"); choices.Add("Z:"); 
 	PhysicalDrive = new wxChoice(panel, wxID_ANY, wxPoint(200, 200), wxSize(100, -1), choices, wxCB_SORT);
-	PhysicalDrive->Select(2);
+	PhysicalDrive->Select(6);
 	PhysicalDrive->Bind(wxEVT_CHOICE, &MainFrame::OnChoiceChanged, this);
-
+	drive = PhysicalDrive->GetStringSelection();
 
 	pathToRecover = new wxButton(panel, wxID_ANY, "Lugar de recuperacion", wxPoint(150, 300), wxSize(200, 50));
 	pathToRecover->Bind(wxEVT_BUTTON, &MainFrame::OnPathToRecoverClicked, this);
@@ -29,6 +29,12 @@ MainFrame::MainFrame(const wxString& title) : wxFrame(nullptr, wxID_ANY, title) 
 
 	recover = new wxButton(panel, wxID_ANY, "Recuperar", wxPoint(150, 400), wxSize(200, 50));
 	recover->Bind(wxEVT_BUTTON, &MainFrame::OnButtonClicked, this);
+
+	gauge = new wxGauge(panel, wxID_ANY, 100, wxPoint(150, 450), wxSize(200, -1));
+	gauge->SetValue(0);
+
+	statusMessage = new wxStaticText(panel, wxID_ANY, path, wxPoint(0, 100), wxSize(500, -1), wxALIGN_CENTRE_HORIZONTAL);
+	statusMessage->SetBackgroundColour(*wxBLUE);
 
 
 
@@ -70,9 +76,28 @@ MainFrame::MainFrame(const wxString& title) : wxFrame(nullptr, wxID_ANY, title) 
 
 void MainFrame::OnButtonClicked(wxCommandEvent& evt) {
 	wxLogStatus("Button Clicked");
+	gauge->SetValue(25);
 	recover->Disable();
+
 	if (!path.empty() && !drive.empty())
-		recoverMain(path.ToStdString(), drive.ToStdString());
+		errorCode = recoverMain(path.ToStdString(), drive.ToStdString());
+	gauge->SetValue(100);
+	switch (errorCode)
+	{
+	case 0:
+		statusMessage->SetBackgroundColour(*wxGREEN);
+		statusMessage->SetLabel("Se hizo la recuperacion de archivos correctamente");
+		break;
+	case 1:
+		statusMessage->SetBackgroundColour(*wxRED);
+		statusMessage->SetLabel("El disco no existe o no se pudo abrir");
+		break;
+	default:
+		break;
+	}
+
+		
+
 }
 
 void MainFrame::OnPathToRecoverClicked(wxCommandEvent& evt) {
