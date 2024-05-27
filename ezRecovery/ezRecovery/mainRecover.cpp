@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <openssl/evp.h>
 #include <iomanip>
+#include <locale>
+#include <codecvt>
+
 
 std::string calculateSHA256(const std::string& fileName) {
     std::ifstream file(fileName, std::ios::binary);
@@ -106,15 +109,18 @@ unsigned int returnLengthOfSize(std::string fileType) {
     return 0;
 }
 
-int main() {
+int recoverMain(std::string restoreFolder, std::string drive) {
+    std::wstring basePath = L"\\\\.\\";
 
-    std::string restoreFolder;
-    std::cout << "Path where restore files will be stored:" << std::endl;
-    std::cin >> restoreFolder;
+    // Convert the drive letter from std::string to std::wstring
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    std::wstring wideDrive = converter.from_bytes(drive);
 
-
-    HANDLE hDrive = CreateFile(
-        L"\\\\.\\G:",
+    // Concatenate the base path with the wide drive letter
+    std::wstring widePath = basePath + wideDrive;
+    LPCWSTR lpWidePath = widePath.c_str();
+    HANDLE hDrive = CreateFileW(
+        lpWidePath,
         GENERIC_READ,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         NULL,
@@ -124,7 +130,6 @@ int main() {
     );
 
     if (hDrive == INVALID_HANDLE_VALUE) {
-        std::cerr << "Failed to open physical drive. Error: " << GetLastError() << std::endl;
         return 1;
     }
 
@@ -159,8 +164,6 @@ int main() {
             for (const std::string& signature : signatures) {
                 size_t pos = hexData.find(signature);
                 if (pos != std::string::npos) {
-                     std::cout << "Found " << fileType << " file signature at offset: "
-                        << pos / 2 << " bytes" << std::endl;
                     size_t startOffset = currentOffset + pos / 2;
                     foundFiles[startOffset] = fileType;
                     
@@ -230,7 +233,6 @@ int main() {
         }
 
         outputFile.close();
-        std::cout << "Restored file: " << fileName << std::endl;
 
         // Calculate and store the hash of the restored file
         std::string hash = calculateSHA256(fileName);
@@ -243,3 +245,4 @@ int main() {
     
     return 0;
 }
+
